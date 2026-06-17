@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
@@ -209,6 +210,21 @@ def test_use_prebuilt_overrides_previous_commit():
     ty.use_prebuilt(Path("/tmp/ty-old"), "aaa")
     ty.use_prebuilt(Path("/tmp/ty-new"), "bbb")
     assert ty.commit_sha == "bbb"
+
+
+@patch("ecosystem_analyzer.ty._ty_executable_name", return_value="ty.exe")
+def test_compile_for_commit_uses_windows_executable(_mock_executable_name, tmp_path):
+    """compile_for_commit uses Cargo's .exe output name on Windows."""
+    repo = Repo.init(tmp_path)
+    (tmp_path / "f.txt").write_text("x")
+    repo.index.add(["f.txt"])
+    repo.index.commit("init")
+    ty = Ty(repo)
+
+    with patch("ecosystem_analyzer.ty.subprocess.run"):
+        ty.compile_for_commit("HEAD")
+
+    assert ty.executable == tmp_path / "target" / "debug" / "ty.exe"
 
 
 def test_commit_sha_without_repo_or_override_raises():

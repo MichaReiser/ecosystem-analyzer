@@ -17,6 +17,10 @@ from .run_output import ExitStatus, OutputVariant, RunOutput
 logger = logging.getLogger(__name__)
 
 
+def _ty_executable_name() -> str:
+    return "ty.exe" if os.name == "nt" else "ty"
+
+
 def _normalize_stderr(stderr: str) -> str | None:
     stderr = stderr.strip()
     return stderr or None
@@ -102,7 +106,7 @@ class Ty:
         # Cargo uses "dev" as the profile name, but outputs to "debug" directory
         # For other profiles, the directory name matches the profile name
         target_dir = "debug" if self.profile == "dev" else self.profile
-        self.executable = self.cargo_target_dir / target_dir / "ty"
+        self.executable = self.cargo_target_dir / target_dir / _ty_executable_name()
         self._commit_override = None
 
     def use_prebuilt(self, binary_path: Path, commit_sha: str) -> None:

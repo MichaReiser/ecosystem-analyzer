@@ -202,8 +202,14 @@ class InstalledProject:
         logger.debug(f"Executing: {' '.join(venv_cmd)}")
         subprocess.run(venv_cmd, check=True, cwd=self._temp_dir.name)
 
-        # Get the venv python path for installations
-        venv_python = Path(self._temp_dir.name) / ".venv" / "bin" / "python"
+        # Ask uv for the interpreter path instead of assuming the Unix venv layout.
+        venv_python = Path(
+            subprocess.check_output(
+                ["uv", "python", "find"],
+                cwd=self._temp_dir.name,
+                text=True,
+            ).strip()
+        )
 
         if self._project.install_cmd:
             logger.info(f"Running custom install command: {self._project.install_cmd}")

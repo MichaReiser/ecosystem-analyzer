@@ -21,6 +21,15 @@ def _make_project(**kwargs) -> Project:
     return Project(**(defaults | kwargs))
 
 
+@pytest.fixture(autouse=True)
+def mock_venv_python():
+    with patch(
+        "ecosystem_analyzer.installed_project.subprocess.check_output",
+        return_value="/tmp/venv-python\n",
+    ) as mock:
+        yield mock
+
+
 class TestValidateExcludeNewer:
     """Tests for the --exclude-newer timestamp validation."""
 
@@ -118,28 +127,30 @@ class TestInstallDependenciesPythonVersion:
     @patch("ecosystem_analyzer.installed_project.subprocess.run")
     @patch.object(InstalledProject, "_clone_or_update")
     def test_venv_uses_required_python_version(
-        self, _mock_clone, mock_run, min_python_version, expected
+        self, _mock_clone, mock_run, mock_venv_python, min_python_version, expected
     ):
-        InstalledProject(_make_project(min_python_version=min_python_version))
+        project = InstalledProject(_make_project(min_python_version=min_python_version))
 
         venv_call_args = mock_run.call_args_list[0]
         cmd = venv_call_args.args[0]
         assert cmd == ["uv", "venv", "--quiet", "--python", expected]
+        mock_venv_python.assert_called_once_with(
+            ["uv", "python", "find"],
+            cwd=str(project.venv_path.parent),
+            text=True,
+        )
 
 
 class TestInstallDependencies:
     @patch("ecosystem_analyzer.installed_project.subprocess.run")
     @patch.object(InstalledProject, "_clone_or_update")
     def test_install_cmd_does_not_skip_deps(self, _mock_clone, mock_run):
-        project = InstalledProject(
-            _make_project(install_cmd="{install} -e .", deps=["pytest"])
-        )
+        InstalledProject(_make_project(install_cmd="{install} -e .", deps=["pytest"]))
 
         assert mock_run.call_count == 3
         install_call_args = mock_run.call_args_list[1]
         assert (
-            install_call_args.args[0]
-            == f"uv pip install --python {project.venv_path / 'bin' / 'python'} -e ."
+            install_call_args.args[0] == "uv pip install --python /tmp/venv-python -e ."
         )
         deps_call_args = mock_run.call_args_list[2]
         assert deps_call_args.args[0] == [
@@ -147,7 +158,7 @@ class TestInstallDependencies:
             "pip",
             "install",
             "--python",
-            str(project.venv_path / "bin" / "python"),
+            "/tmp/venv-python",
             "--link-mode=copy",
             "pytest",
         ]
