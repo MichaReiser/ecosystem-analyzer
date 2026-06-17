@@ -2,6 +2,7 @@ import datetime as dt
 import hashlib
 import logging
 import os
+import shlex
 import subprocess
 import tempfile
 from pathlib import Path
@@ -12,6 +13,22 @@ from mypy_primer.model import Project
 from .config import MINIMUM_PYTHON_VERSION
 
 logger = logging.getLogger(__name__)
+
+
+class ProjectUnavailableOnPlatformError(RuntimeError):
+    """Raised when a project cannot exist on the current platform."""
+
+
+def _custom_install_command(
+    install_cmd: str, *, os_name: str | None = None
+) -> tuple[str | list[str], bool]:
+    if (os_name or os.name) == "nt":
+        return ["bash", "-c", install_cmd], False
+    return install_cmd, True
+
+
+def _is_windows_invalid_path(error: GitError, *, os_name: str | None = None) -> bool:
+    return (os_name or os.name) == "nt" and "invalid path" in str(error)
 
 
 def _get_cache_dir() -> Path:
@@ -131,7 +148,11 @@ class InstalledProject:
                 )
         except GitError as e:
             logger.error(f"Error cloning/updating repository: {e}")
-            return
+            if _is_windows_invalid_path(e):
+                raise ProjectUnavailableOnPlatformError(
+                    "repository contains a path that Windows cannot checkout"
+                ) from e
+            raise
 
         if self._exclude_newer is not None:
             self._pin_to_timestamp()
@@ -215,15 +236,18 @@ class InstalledProject:
             logger.info(f"Running custom install command: {self._project.install_cmd}")
 
             # Use absolute path to venv python for install commands
-            install_placeholder = f"uv pip install --python {venv_python}"
+            install_placeholder = (
+                f"uv pip install --python {shlex.quote(venv_python.as_posix())}"
+            )
             if self._exclude_newer:
                 install_placeholder += f" --exclude-newer {self._exclude_newer}"
             install_cmd = self._project.install_cmd.format(install=install_placeholder)
+            command, shell = _custom_install_command(install_cmd)
 
             logger.debug(f"Executing: '{install_cmd}'")
             subprocess.run(
-                install_cmd,
-                shell=True,
+                command,
+                shell=shell,
                 check=True,
                 cwd=self._cache_path,  # Run in cached project directory
                 capture_output=False,

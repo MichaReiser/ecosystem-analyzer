@@ -8,7 +8,7 @@ from git import Commit, Repo
 from mypy_primer.model import Project
 from mypy_primer.projects import get_projects
 
-from .installed_project import InstalledProject
+from .installed_project import InstalledProject, ProjectUnavailableOnPlatformError
 from .run_output import RunOutput
 from .ty import Ty
 
@@ -103,6 +103,8 @@ class Manager:
                     installed_project = future.result()
                     self._installed_projects.append(installed_project)
                     logger.debug(f"Successfully installed project: {project_name}")
+                except ProjectUnavailableOnPlatformError as e:
+                    logger.warning(f"Skipping project {project_name}: {e}")
                 except Exception as e:
                     logger.error(f"Failed to install project {project_name}: {e}")
                     raise

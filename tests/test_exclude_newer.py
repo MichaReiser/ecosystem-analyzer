@@ -3,10 +3,13 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from git import GitError
 from mypy_primer.model import Project
 
 from ecosystem_analyzer.installed_project import (
     InstalledProject,
+    _custom_install_command,
+    _is_windows_invalid_path,
     validate_exclude_newer,
 )
 
@@ -162,6 +165,18 @@ class TestInstallDependencies:
             "--link-mode=copy",
             "pytest",
         ]
+        assert install_call_args.kwargs["shell"] is True
+
+    def test_custom_install_cmd_uses_bash_on_windows(self):
+        assert _custom_install_command("echo hi", os_name="nt") == (
+            ["bash", "-c", "echo hi"],
+            False,
+        )
+
+    def test_invalid_git_path_is_windows_only(self):
+        error = GitError("invalid path 'bad'")
+        assert _is_windows_invalid_path(error, os_name="nt")
+        assert not _is_windows_invalid_path(error, os_name="posix")
 
 
 class TestInstallDependenciesExcludeNewer:
