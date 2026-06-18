@@ -3,6 +3,7 @@ import hashlib
 import logging
 import os
 import shlex
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -20,15 +21,50 @@ class ProjectUnavailableOnPlatformError(RuntimeError):
 
 
 def _custom_install_command(
-    install_cmd: str, *, os_name: str | None = None
+    install_cmd: str,
+    *,
+    os_name: str | None = None,
+    windows_bash: str | None = None,
 ) -> tuple[str | list[str], bool]:
     if (os_name or os.name) == "nt":
-        return ["bash", "-c", install_cmd], False
+        return [windows_bash or _windows_bash(), "-c", install_cmd], False
     return install_cmd, True
+
+
+def _windows_bash() -> str:
+    if git := shutil.which("git"):
+        git_dir = Path(git).parent
+        for bash in (git_dir / "bash.exe", git_dir.parent / "bin" / "bash.exe"):
+            if bash.is_file():
+                return str(bash)
+    return "bash"
 
 
 def _is_windows_invalid_path(error: GitError, *, os_name: str | None = None) -> bool:
     return (os_name or os.name) == "nt" and "invalid path" in str(error)
+
+
+def _run_dependency_install(
+    command: str | list[str],
+    *,
+    shell: bool,
+    cwd: Path,
+    os_name: str | None = None,
+) -> None:
+    try:
+        subprocess.run(
+            command,
+            shell=shell,
+            check=True,
+            cwd=cwd,
+            capture_output=False,
+        )
+    except subprocess.CalledProcessError as e:
+        if (os_name or os.name) == "nt":
+            raise ProjectUnavailableOnPlatformError(
+                "dependencies cannot be installed on Windows"
+            ) from e
+        raise
 
 
 def _get_cache_dir() -> Path:
@@ -245,12 +281,10 @@ class InstalledProject:
             command, shell = _custom_install_command(install_cmd)
 
             logger.debug(f"Executing: '{install_cmd}'")
-            subprocess.run(
+            _run_dependency_install(
                 command,
                 shell=shell,
-                check=True,
                 cwd=self._cache_path,  # Run in cached project directory
-                capture_output=False,
             )
         if self._project.deps:
             logger.info(f"Installing dependencies: {', '.join(self._project.deps)}")
@@ -269,11 +303,10 @@ class InstalledProject:
                 *self._project.deps,
             ]
             logger.debug(f"Executing: {' '.join(pip_cmd)}")
-            subprocess.run(
+            _run_dependency_install(
                 pip_cmd,
-                check=True,
+                shell=False,
                 cwd=self._cache_path,  # Run in cached project directory
-                capture_output=False,
             )
         if not self._project.install_cmd and not self._project.deps:
             logger.info("No dependencies to install")

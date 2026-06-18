@@ -1,4 +1,6 @@
 import datetime as dt
+import subprocess
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -8,8 +10,10 @@ from mypy_primer.model import Project
 
 from ecosystem_analyzer.installed_project import (
     InstalledProject,
+    ProjectUnavailableOnPlatformError,
     _custom_install_command,
     _is_windows_invalid_path,
+    _run_dependency_install,
     validate_exclude_newer,
 )
 
@@ -168,8 +172,10 @@ class TestInstallDependencies:
         assert install_call_args.kwargs["shell"] is True
 
     def test_custom_install_cmd_uses_bash_on_windows(self):
-        assert _custom_install_command("echo hi", os_name="nt") == (
-            ["bash", "-c", "echo hi"],
+        assert _custom_install_command(
+            "echo hi", os_name="nt", windows_bash="C:/Git/bin/bash.exe"
+        ) == (
+            ["C:/Git/bin/bash.exe", "-c", "echo hi"],
             False,
         )
 
@@ -177,6 +183,19 @@ class TestInstallDependencies:
         error = GitError("invalid path 'bad'")
         assert _is_windows_invalid_path(error, os_name="nt")
         assert not _is_windows_invalid_path(error, os_name="posix")
+
+    @patch(
+        "ecosystem_analyzer.installed_project.subprocess.run",
+        side_effect=subprocess.CalledProcessError(1, ["uv"]),
+    )
+    def test_failed_dependency_install_is_skipped_on_windows(self, _mock_run):
+        with pytest.raises(ProjectUnavailableOnPlatformError):
+            _run_dependency_install(
+                ["uv"],
+                shell=False,
+                cwd=Path("."),
+                os_name="nt",
+            )
 
 
 class TestInstallDependenciesExcludeNewer:
