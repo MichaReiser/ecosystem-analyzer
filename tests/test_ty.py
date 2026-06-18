@@ -1,4 +1,5 @@
 from pathlib import Path
+from subprocess import CompletedProcess
 from unittest.mock import MagicMock, patch
 
 from ecosystem_analyzer.installed_project import InstalledProject
@@ -43,6 +44,25 @@ def _project() -> InstalledProject:
     project.name = "proj"
     project.location = "https://github.com/example/proj"
     return project
+
+
+def test_run_on_project_decodes_ty_output_as_utf8():
+    ty = _ty()
+    project = MagicMock(spec=InstalledProject)
+    project.ty_cmd = None
+    project.venv_path = Path(".venv")
+    project.paths = []
+    project.root_directory = Path(".")
+    project.current_commit = "abc123"
+
+    with patch(
+        "ecosystem_analyzer.ty.subprocess.run",
+        return_value=CompletedProcess([], 1, stdout="", stderr=""),
+    ) as run:
+        ty.run_on_project(project)
+
+    assert run.call_args.kwargs["encoding"] == "utf-8"
+    assert run.call_args.kwargs["errors"] == "replace"
 
 
 def test_multiple_runs_classify_intermittent_abnormal_exit_as_flaky():
